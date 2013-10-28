@@ -14,27 +14,27 @@ Usage:
 >>> L = gh.users('githubpy').followers.get()
 >>> L[0].id
 470058
->>> L[0].login
-u'michaelliao'
+>>> L[0].login == u'michaelliao'
+True
 >>> x_ratelimit_remaining = gh.x_ratelimit_remaining
 >>> x_ratelimit_limit = gh.x_ratelimit_limit
 >>> L = gh.users('githubpy').following.get()
->>> L[0].url
-u'https://api.github.com/users/michaelliao'
+>>> L[0].url == u'https://api.github.com/users/michaelliao'
+True
 >>> L = gh.repos('githubpy')('testgithubpy').issues.get(state='closed', sort='created')
->>> L[0].title
-u'sample issue for test'
+>>> L[0].title == u'sample issue for test'
+True
 >>> L[0].number
 1
 >>> I = gh.repos('githubpy')('testgithubpy').issues(1).get()
->>> I.url
-u'https://api.github.com/repos/githubpy/testgithubpy/issues/1'
+>>> I.url == u'https://api.github.com/repos/githubpy/testgithubpy/issues/1'
+True
 >>> gh = GitHub(username='githubpy', password='test-githubpy-1234')
 >>> r = gh.repos('githubpy')('testgithubpy').issues.post(title='test create issue', body='just a test')
->>> r.title
-u'test create issue'
->>> r.state
-u'open'
+>>> r.title == u'test create issue'
+True
+>>> r.state == u'open'
+True
 >>> gh.repos.thisisabadurl.get()
 Traceback (most recent call last):
     ...
@@ -44,12 +44,21 @@ Traceback (most recent call last):
     ...
 ApiNotFoundError: https://api.github.com/users/github-not-exist-user/followers
 '''
-from __future__ import absolute_import
-from __future__ import print_function
-from __future__ import division
 
-import re, os, sha, time, hmac, base64, hashlib, urllib, urllib2, mimetypes
+import re, os, time, hmac, base64, hashlib, urllib, mimetypes
 
+try:
+    # Python 2
+    from urllib2 import build_opener, HTTPSHandler, Request, HTTPError
+    from urllib import quote as urlquote
+    from StringIO import StringIO
+    def bytes(string, encoding=None):
+        return str(string)
+except:
+    # Python 3
+    from urllib.request import build_opener, HTTPSHandler, HTTPError, Request
+    from urllib.parse import quote as urlquote
+    from io import StringIO
 try:
     import json
 except ImportError:
@@ -57,7 +66,7 @@ except ImportError:
 
 from collections import Iterable
 from datetime import datetime, timedelta, tzinfo
-from StringIO import StringIO
+
 TIMEOUT=60
 
 __version__ = '1.0.0'
@@ -84,7 +93,12 @@ class GitHub(object):
         self.x_ratelimit_limit = (-1)
         self._authorization = None
         if username and password:
-            self._authorization = 'Basic %s' % base64.b64encode('%s:%s' % (username, password))
+            # roundabout hack for Python 3
+            userandpass = base64.b64encode(bytes('%s:%s' % (username, password), 'utf-8'))
+            userandpass = userandpass.decode('ascii')
+            self._authorization = 'Basic %s' % userandpass
+            with open('foo', 'w') as f:
+                f.write(self._authorization)
         elif access_token:
             self._authorization = 'token %s' % access_token
         self._client_id = client_id
@@ -121,8 +135,8 @@ class GitHub(object):
             kw['redirect_uri'] = self._redirect_uri
         if state:
             kw['state'] = state
-        opener = urllib2.build_opener(urllib2.HTTPSHandler)
-        request = urllib2.Request('https://github.com/login/oauth/access_token', data=_encode_params(kw))
+        opener = build_opener(HTTPSHandler)
+        request = Request('https://github.com/login/oauth/access_token', data=_encode_params(kw))
         request.get_method = _METHOD_MAP['POST']
         request.add_header('Accept', 'application/json')
         try:
@@ -131,7 +145,7 @@ class GitHub(object):
             if 'error' in r:
                 raise ApiAuthError(str(r.error))
             return str(r.access_token)
-        except urllib2.HTTPError as e:
+        except HTTPError as e:
             raise ApiAuthError('HTTPError when get access token')
 
     def __getattr__(self, attr):
@@ -143,10 +157,10 @@ class GitHub(object):
         if method=='GET' and kw:
             path = '%s?%s' % (path, _encode_params(kw))
         if method in ['POST', 'PATCH', 'PUT']:
-            data = _encode_json(kw)
+            data = bytes(_encode_json(kw), 'utf-8')
         url = '%s%s' % (_URL, path)
-        opener = urllib2.build_opener(urllib2.HTTPSHandler)
-        request = urllib2.Request(url, data=data)
+        opener = build_opener(HTTPSHandler)
+        request = Request(url, data=data)
         request.get_method = _METHOD_MAP[method]
         if self._authorization:
             request.add_header('Authorization', self._authorization)
@@ -156,11 +170,11 @@ class GitHub(object):
             response = opener.open(request, timeout=TIMEOUT)
             is_json = self._process_resp(response.headers)
             if is_json:
-                return _parse_json(response.read())
-        except urllib2.HTTPError as e:
+                return _parse_json(response.read().decode('ascii'))
+        except HTTPError as e:
             is_json = self._process_resp(e.headers)
             if is_json:
-                json = _parse_json(e.read())
+                json = _parse_json(e.read().decode('ascii'))
             req = JsonObject(method=method, url=url)
             resp = JsonObject(code=e.code, json=json)
             if resp.code==404:
@@ -231,9 +245,13 @@ def _encode_params(kw):
     Encode parameters.
     '''
     args = []
-    for k, v in kw.iteritems():
-        qv = v.encode('utf-8') if isinstance(v, unicode) else str(v)
-        args.append('%s=%s' % (k, urllib.quote(qv)))
+    for k, v in kw.items():
+        try:
+            # Python 2
+            qv = v.encode('utf-8') if isinstance(v, unicode) else str(v)
+        except:
+            qv = v
+        args.append('%s=%s' % (k, urlquote(qv)))
     return '&'.join(args)
 
 def _encode_json(obj):
@@ -253,7 +271,7 @@ def _encode_json(obj):
 def _parse_json(jsonstr):
     def _obj_hook(pairs):
         o = JsonObject()
-        for k, v in pairs.iteritems():
+        for k, v in pairs.items():
             o[str(k)] = v
         return o
     return json.loads(jsonstr, object_hook=_obj_hook)
