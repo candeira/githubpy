@@ -170,11 +170,11 @@ class GitHub(object):
             response = opener.open(request, timeout=TIMEOUT)
             is_json = self._process_resp(response.headers)
             if is_json:
-                return _parse_json(response.read().decode('ascii'))
+                return _parse_json(response.read().decode('utf-8'))
         except HTTPError as e:
             is_json = self._process_resp(e.headers)
             if is_json:
-                json = _parse_json(e.read().decode('ascii'))
+                json = _parse_json(e.read().decode('utf-8'))
             req = JsonObject(method=method, url=url)
             resp = JsonObject(code=e.code, json=json)
             if resp.code==404:
