@@ -44,6 +44,9 @@ Traceback (most recent call last):
     ...
 ApiNotFoundError: https://api.github.com/users/github-not-exist-user/followers
 '''
+from __future__ import absolute_import
+from __future__ import print_function
+from __future__ import division
 
 import re, os, sha, time, hmac, base64, hashlib, urllib, urllib2, mimetypes
 
@@ -128,7 +131,7 @@ class GitHub(object):
             if 'error' in r:
                 raise ApiAuthError(str(r.error))
             return str(r.access_token)
-        except urllib2.HTTPError, e:
+        except urllib2.HTTPError as e:
             raise ApiAuthError('HTTPError when get access token')
 
     def __getattr__(self, attr):
@@ -154,7 +157,7 @@ class GitHub(object):
             is_json = self._process_resp(response.headers)
             if is_json:
                 return _parse_json(response.read())
-        except urllib2.HTTPError, e:
+        except urllib2.HTTPError as e:
             is_json = self._process_resp(e.headers)
             if is_json:
                 json = _parse_json(e.read())
